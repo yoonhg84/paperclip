@@ -15,32 +15,42 @@ function resolveServerLogDir(): string {
   return resolveDefaultLogsDir();
 }
 
-const logDir = resolveServerLogDir();
-fs.mkdirSync(logDir, { recursive: true });
-
-const logFile = path.join(logDir, "server.log");
-
 const sharedOpts = {
   translateTime: "HH:MM:ss",
   ignore: "pid,hostname",
   singleLine: true,
 };
 
-export const logger = pino({
-  level: "debug",
-}, pino.transport({
-  targets: [
+function buildTransportTargets(): pino.TransportTargetOptions[] {
+  const targets: pino.TransportTargetOptions[] = [
     {
       target: "pino-pretty",
       options: { ...sharedOpts, ignore: "pid,hostname,req,res,responseTime", colorize: true, destination: 1 },
       level: "info",
     },
-    {
+  ];
+
+  // Skip file logging when the log directory is not writable (e.g. Railway containers)
+  try {
+    const logDir = resolveServerLogDir();
+    fs.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, "server.log");
+    targets.push({
       target: "pino-pretty",
       options: { ...sharedOpts, colorize: false, destination: logFile, mkdir: true },
       level: "debug",
-    },
-  ],
+    });
+  } catch {
+    // File logging unavailable — stdout only
+  }
+
+  return targets;
+}
+
+export const logger = pino({
+  level: "debug",
+}, pino.transport({
+  targets: buildTransportTargets(),
 }));
 
 export const httpLogger = pinoHttp({
